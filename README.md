@@ -12,6 +12,87 @@ Backend API desarrollado con Node.js, Express.js y MongoDB, incluye documentaci�
 - **Security** - Middleware de seguridad con Helmet
 - **CORS** - Configuración de Cross-Origin Resource Sharing
 - **Error Handling** - Manejo centralizado de errores
+- **WebSockets** - Comunicación en tiempo real con Socket.IO
+- **WhatsApp Integration** - Integración con WhatsApp Web.js
+
+## 📋 Requisitos previos
+
+- Node.js (versión 14 o superior)
+- MongoDB (local o en la nube)
+- npm o yarn
+
+## 🛠️ Instalación
+
+1. Clona el repositorio:
+```bash
+git clone <url-del-repositorio>
+cd unify-push-api
+```
+
+2. Instala las dependencias:
+```bash
+npm install
+```
+
+3. Configura las variables de entorno:
+```bash
+cp .env.example .env
+```
+Edita el archivo `.env` con tus configuraciones.
+
+4. Inicia el servidor:
+```bash
+# Desarrollo (con nodemon)
+npm run dev
+
+# Producción
+npm start
+```
+
+## 🚀 Despliegue
+
+### Vercel (Limitado)
+⚠️ **Nota**: Vercel no es ideal para esta aplicación debido a limitaciones con WebSockets y procesos persistentes.
+
+```bash
+# Despliegue rápido (Windows)
+deploy-vercel.cmd
+
+# O manualmente
+vercel --prod
+```
+
+**Limitaciones en Vercel:**
+- WebSockets no funcionan correctamente
+- WhatsApp Web.js requiere procesos persistentes
+- Sesiones se pierden entre deployments
+
+### Alternativas Recomendadas
+
+Para un despliegue completo, usa:
+
+#### Railway (Recomendado)
+```bash
+npm install -g @railway/cli
+railway login
+railway init
+railway up
+```
+
+#### Render
+1. Conecta tu repo de GitHub
+2. Selecciona "Web Service"
+3. Configura variables de entorno
+
+#### Heroku
+```bash
+heroku create
+git push heroku main
+```
+
+Lee `VERCEL-DEPLOYMENT.md` para más detalles sobre configuración.
+
+## 📚 Documentación de la API
 
 ## 📋 Requisitos previos
 
