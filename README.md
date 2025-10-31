@@ -10,7 +10,7 @@ Backend API desarrollado con Node.js, Express.js y MongoDB, incluye documentaci�
 - **JWT Authentication** - Autenticaci처n segura con tokens
 - **Validation** - Validaci처n de datos con express-validator
 - **Security** - Middleware de seguridad con Helmet
-- **CORS** - Configuraci처n de Cross-Origin Resource Sharing
+- **CORS** - Configuraci처n de Cross-Origin Resource Sharing (permite cualquier origen)
 - **Error Handling** - Manejo centralizado de errores
 - **WebSockets** - Comunicaci처n en tiempo real con Socket.IO
 - **WhatsApp Integration** - Integraci처n con WhatsApp Web.js

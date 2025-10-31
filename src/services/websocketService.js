@@ -13,7 +13,7 @@ class WebSocketService {
     const { Server } = require('socket.io');
     this.io = new Server(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
+        origin: true, // Permite cualquier origen para WebSockets
         methods: ["GET", "POST"],
         credentials: true
       },

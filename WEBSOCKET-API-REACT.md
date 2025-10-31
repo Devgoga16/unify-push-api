@@ -174,6 +174,8 @@ const socket = io('http://localhost:3000', {
 });
 ```
 
+**✅ CORS Configurado:** La API acepta conexiones desde cualquier origen.
+
 ### 2. **Unirse a Room de Bot**
 
 ```javascript
