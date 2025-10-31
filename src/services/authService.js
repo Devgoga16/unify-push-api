@@ -5,6 +5,10 @@ class AuthService {
   
   // Generar JWT token
   generateToken(payload) {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET no está configurado. Configura la variable de entorno JWT_SECRET.');
+    }
+    
     return jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRE || '30d'
     });
@@ -12,6 +16,10 @@ class AuthService {
 
   // Verificar JWT token
   verifyToken(token) {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET no está configurado. Configura la variable de entorno JWT_SECRET.');
+    }
+    
     try {
       return jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {

@@ -163,7 +163,66 @@ class BotLifecycleService {
       console.error('Error en limpieza:', error);
     }
   }
+
+  // VERIFICAR Y CORREGIR TODOS LOS BOTS CON INCONSISTENCIAS
+  async verifyAndFixAllBots() {
+    try {
+      console.log('🔍 Verificando consistencia de TODOS los bots...');
+      
+      const allBots = await Bot.find({ isActive: true });
+      const results = {
+        total: allBots.length,
+        checked: 0,
+        fixed: 0,
+        errors: 0,
+        details: []
+      };
+
+      for (const bot of allBots) {
+        try {
+          results.checked++;
+          console.log(`🔍 Verificando bot ${bot.name} (${bot._id}) - Estado BD: ${bot.status}`);
+          
+          const statusCheck = await this.verifyAndFixBotStatus(bot._id);
+          
+          if (statusCheck.fixed) {
+            results.fixed++;
+            console.log(`✅ Bot ${bot.name} corregido: ${statusCheck.message}`);
+          } else if (statusCheck.consistent) {
+            console.log(`✅ Bot ${bot.name} consistente`);
+          }
+          
+          results.details.push({
+            botId: bot._id,
+            botName: bot.name,
+            originalStatus: bot.status,
+            statusCheck: statusCheck
+          });
+          
+        } catch (error) {
+          results.errors++;
+          console.error(`❌ Error verificando bot ${bot._id}:`, error.message);
+          results.details.push({
+            botId: bot._id,
+            botName: bot.name,
+            error: error.message
+          });
+        }
+      }
+
+      console.log(`📊 Verificación completada:`);
+      console.log(`  - Total bots: ${results.total}`);
+      console.log(`  - Verificados: ${results.checked}`);
+      console.log(`  - Corregidos: ${results.fixed}`);
+      console.log(`  - Errores: ${results.errors}`);
+
+      return results;
+
+    } catch (error) {
+      console.error('❌ Error en verificación masiva:', error);
+      throw error;
+    }
+  }
 }
 
-module.exports = new BotLifecycleService();
 module.exports = new BotLifecycleService();

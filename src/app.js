@@ -2,12 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const http = require('http');
 require('dotenv').config();
 
 const connectDB = require('./config/database');
 const swaggerConfig = require('./config/swagger');
 const errorHandler = require('./middleware/errorHandler');
 const botLifecycleService = require('./services/botLifecycleService');
+const websocketService = require('./services/websocketService');
 const { createAdminUser } = require('./config/seeder');
 
 // Importar rutas
@@ -63,9 +65,16 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, async () => {
+// Crear servidor HTTP
+const server = http.createServer(app);
+
+// Inicializar WebSocket service
+websocketService.initialize(server);
+
+server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`📚 Documentación disponible en http://localhost:${PORT}/api-docs`);
+  console.log(`🔌 WebSocket disponible en ws://localhost:${PORT}`);
   
   // DEBUGGING: Limpiar todas las instancias al arrancar
   setTimeout(async () => {

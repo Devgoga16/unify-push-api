@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const Bot = require('../models/Bot');
 const Message = require('../models/Message');
+const websocketService = require('./websocketService');
 
 class WhatsAppService {
   constructor() {
@@ -177,8 +178,13 @@ class WhatsAppService {
           lastActivity: new Date()
         });
 
+        // EMITIR EVENTO WEBSOCKET: QR generado
+        websocketService.emitBotQRGenerated(botIdString, qrImage);
+        websocketService.emitBotLog(botIdString, 'info', 'Código QR generado - escanea con WhatsApp');
+
       } catch (error) {
         console.error(`Error generando QR para bot ${botIdString}:`, error);
+        websocketService.emitBotError(botIdString, error);
       }
     });
 
@@ -217,8 +223,13 @@ class WhatsAppService {
 
         console.log(`✅ Bot ${botIdString} listo para enviar mensajes 📤`);
 
+        // EMITIR EVENTO WEBSOCKET: Bot conectado
+        websocketService.emitBotConnected(botIdString, phoneNumber ? `+${phoneNumber}` : null);
+        websocketService.emitBotLog(botIdString, 'info', `Bot conectado exitosamente - Número: ${phoneNumber ? `+${phoneNumber}` : 'N/A'}`);
+
       } catch (error) {
         console.error(`Error en ready para bot ${botIdString}:`, error);
+        websocketService.emitBotError(botIdString, error);
       }
     });
 
@@ -235,8 +246,13 @@ class WhatsAppService {
         // Limpiar QR si hay error
         this.qrCodes.delete(botIdString);
 
+        // EMITIR EVENTO WEBSOCKET: Error de autenticación
+        websocketService.emitBotError(botIdString, new Error(`Error de autenticación: ${msg}`));
+        websocketService.emitBotLog(botIdString, 'error', `Error de autenticación: ${msg}`);
+
       } catch (error) {
         console.error(`Error manejando auth_failure para bot ${botIdString}:`, error);
+        websocketService.emitBotError(botIdString, error);
       }
     });
 
@@ -280,8 +296,13 @@ class WhatsAppService {
         console.log(`✅ Bot ${botIdString} limpiado automáticamente - Listo para configurar de cero`);
         console.log(`� Reconexión automática DESHABILITADA - Use POST /api/bots/${botIdString}/connect`);
 
+        // EMITIR EVENTO WEBSOCKET: Bot desconectado
+        websocketService.emitBotDisconnected(botIdString, reason || 'Desconectado desde WhatsApp');
+        websocketService.emitBotLog(botIdString, 'warn', `Bot desconectado desde WhatsApp: ${reason || 'Sin razón especificada'}`);
+
       } catch (error) {
         console.error(`Error manejando disconnected para bot ${botIdString}:`, error);
+        websocketService.emitBotError(botIdString, error);
       }
     });
 
@@ -331,8 +352,13 @@ class WhatsAppService {
 
         console.log(`🚫 Bot ${botIdString} marcado como error - No se reconectará automáticamente`);
 
+        // EMITIR EVENTO WEBSOCKET: Error de autenticación
+        websocketService.emitBotError(botIdString, new Error(`Error de autenticación: ${msg}`));
+        websocketService.emitBotLog(botIdString, 'error', `Error de autenticación - reconexión automática deshabilitada: ${msg}`);
+
       } catch (error) {
         console.error(`Error manejando auth_failure para bot ${botIdString}:`, error);
+        websocketService.emitBotError(botIdString, error);
       }
     });
   }
@@ -352,7 +378,7 @@ class WhatsAppService {
       
       // Resetear en BD
       await Bot.findByIdAndUpdate(botIdString, {
-        status: 'disconnected',
+        status: 'pending',
         qrCode: null,
         phoneNumber: null,
         lastActivity: new Date()
@@ -431,6 +457,15 @@ class WhatsAppService {
           lastActivity: new Date()
         });
 
+        // EMITIR EVENTO WEBSOCKET: Mensaje enviado
+        websocketService.emitMessageSent(botIdString, {
+          messageId: sentMessage.id._serialized,
+          to: to,
+          message: message,
+          timestamp: new Date().toISOString()
+        });
+        websocketService.emitBotLog(botIdString, 'info', `Mensaje enviado a ${to}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
+
         return {
           success: true,
           messageId: sentMessage.id._serialized,
@@ -440,6 +475,11 @@ class WhatsAppService {
       } catch (sendError) {
         // Marcar mensaje como fallido
         await messageDoc.markAsFailed(sendError.message);
+        
+        // EMITIR EVENTO WEBSOCKET: Error enviando mensaje
+        websocketService.emitBotError(botIdString, sendError);
+        websocketService.emitBotLog(botIdString, 'error', `Error enviando mensaje a ${to}: ${sendError.message}`);
+        
         throw sendError;
       }
 

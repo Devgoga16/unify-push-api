@@ -711,6 +711,88 @@ try {
 
 router.get('/integration-guide', getIntegrationGuide);
 
+// Estadísticas de WebSocket (solo para administradores)
+const getWebSocketStats = async (req, res) => {
+  try {
+    // Verificar que sea administrador
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Acceso denegado',
+        message: 'Solo administradores pueden ver estadísticas de WebSocket'
+      });
+    }
+
+    const websocketService = require('../services/websocketService');
+    const stats = websocketService.getConnectionStats();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        websocket: stats,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Error interno del servidor",
+      message: "No se pudieron obtener estadísticas de WebSocket"
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/websocket-stats:
+ *   get:
+ *     summary: Estadísticas de conexiones WebSocket
+ *     description: |
+ *       Obtiene estadísticas de conexiones WebSocket activas.
+ *       Solo disponible para administradores.
+ *     tags: [API Info]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estadísticas obtenidas exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     websocket:
+ *                       type: object
+ *                       properties:
+ *                         connectedUsers:
+ *                           type: integer
+ *                           example: 2
+ *                         totalSockets:
+ *                           type: integer
+ *                           example: 3
+ *                         activeBotRooms:
+ *                           type: integer
+ *                           example: 1
+ *                         rooms:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               botId:
+ *                                 type: string
+ *                               connectedSockets:
+ *                                 type: integer
+ *       403:
+ *         description: Acceso denegado
+ */
+router.get('/websocket-stats', getWebSocketStats);
+
 router.get('/info', getApiInfo);
 
 module.exports = router;

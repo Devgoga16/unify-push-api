@@ -7,6 +7,7 @@ const {
 } = require('../controllers/messageController');
 const { validateMessage } = require('../middleware/validation');
 const { authenticateApiKey, rateLimitMiddleware } = require('../middleware/apiKeyAuth');
+const botLifecycleService = require('../services/botLifecycleService');
 
 /**
  * @swagger
@@ -333,5 +334,62 @@ router.post('/:apiKey/send-legacy', validateMessage, sendMessage);
  *         description: Error del servidor
  */
 router.get('/:apiKey/status-legacy', getBotStatusByApiKey);
+
+// ENDPOINT ADMINISTRATIVO: Verificar y corregir inconsistencias de estado
+/**
+ * @swagger
+ * /api/bots/verify-consistency:
+ *   post:
+ *     summary: Verificar y corregir inconsistencias de estado de bots
+ *     description: |
+ *       Endpoint administrativo para verificar y corregir bots que están marcados
+ *       como "connected" en BD pero no tienen cliente activo en memoria.
+ *     tags: [Messages]
+ *     responses:
+ *       200:
+ *         description: Verificación completada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: number
+ *                       example: 5
+ *                     checked:
+ *                       type: number
+ *                       example: 5
+ *                     fixed:
+ *                       type: number
+ *                       example: 2
+ *                     errors:
+ *                       type: number
+ *                       example: 0
+ */
+router.post('/verify-consistency', async (req, res) => {
+  try {
+    console.log('🔍 Ejecutando verificación de consistencia de bots...');
+    const results = await botLifecycleService.verifyAndFixAllBots();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Verificación de consistencia completada',
+      data: results
+    });
+  } catch (error) {
+    console.error('❌ Error en verificación de consistencia:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message
+    });
+  }
+});
 
 module.exports = router;

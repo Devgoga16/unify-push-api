@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createBot,
   getUserBots,
+  refreshAllBots,
   getBotById,
   getBotQR,
   getBotQRImage,
@@ -111,6 +112,52 @@ router.post('/', authenticate, validateBotCreate, createBot);
  *         description: Error del servidor
  */
 router.get('/', authenticate, getUserBots);
+
+/**
+ * @swagger
+ * /api/bots/refresh:
+ *   post:
+ *     summary: Forzar actualización del estado de todos los bots
+ *     description: Actualiza el estado de todos los bots y emite eventos WebSocket para sincronizar con el frontend. Útil para detectar cambios directos en la base de datos.
+ *     tags: [Bots]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estado de bots actualizado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Estado de bots actualizado y notificado a todos los clientes conectados"
+ *                 count:
+ *                   type: number
+ *                   example: 3
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/Bot'
+ *                       - type: object
+ *                         properties:
+ *                           realTimeStatus:
+ *                             type: object
+ *                           isReady:
+ *                             type: boolean
+ *                           endpointUrl:
+ *                             type: string
+ *       401:
+ *         description: Token inválido
+ *       500:
+ *         description: Error del servidor
+ */
+router.post('/refresh', authenticate, refreshAllBots);
 
 /**
  * @swagger

@@ -3,6 +3,7 @@ const Message = require('../models/Message');
 const whatsappService = require('../services/whatsappService');
 const botLifecycleService = require('../services/botLifecycleService');
 const sessionCleanupService = require('../services/sessionCleanupService');
+const websocketService = require('../services/websocketService');
 const { validationResult } = require('express-validator');
 
 // Función auxiliar para verificar acceso a bot (admin puede acceder a cualquier bot)
@@ -74,19 +75,42 @@ const getUserBots = async (req, res, next) => {
       bots = await Bot.find({ owner: req.user._id }).sort({ createdAt: -1 });
     }
     
-    // Agregar endpoint URL y información del propietario
-    const botsWithEndpoint = bots.map(bot => ({
-      ...bot.toObject(),
-      endpointUrl: bot.getEndpointUrl(),
-      // Si es admin, incluir información del propietario
-      ...(req.user.role === 'admin' && {
-        ownerInfo: bot.owner ? {
-          id: bot.owner._id,
-          name: bot.owner.name,
-          username: bot.owner.username
-        } : null
-      })
-    }));
+    // Agregar endpoint URL, información del propietario y ESTADO EN TIEMPO REAL
+    const botsWithEndpoint = bots.map(bot => {
+      const realTimeStatus = whatsappService.getBotStatus(bot._id);
+      
+      return {
+        ...bot.toObject(),
+        endpointUrl: bot.getEndpointUrl(),
+        // ESTADO EN TIEMPO REAL - ¡Esto faltaba!
+        realTimeStatus: realTimeStatus,
+        isReady: realTimeStatus.connected && realTimeStatus.isReady,
+        // Si es admin, incluir información del propietario
+        ...(req.user.role === 'admin' && {
+          ownerInfo: bot.owner ? {
+            id: bot.owner._id,
+            name: bot.owner.name,
+            username: bot.owner.username
+          } : null
+        })
+      };
+    });
+
+    // EMITIR EVENTOS WEBSOCKET: Estado actual de todos los bots listados
+    // Esto permite que el frontend mantenga el estado sincronizado en tiempo real
+    botsWithEndpoint.forEach(bot => {
+      const realTimeStatus = whatsappService.getBotStatus(bot._id);
+      websocketService.emitBotStatusUpdate(bot._id, {
+        database: {
+          status: bot.status,
+          phoneNumber: bot.phoneNumber,
+          lastActivity: bot.lastActivity,
+          qrCode: bot.qrCode ? true : false
+        },
+        realTime: realTimeStatus,
+        isReady: realTimeStatus.connected && realTimeStatus.isReady
+      });
+    });
 
     console.log(`✅ DEBUGGING: getUserBots completado - ${botsWithEndpoint.length} bots encontrados`);
 
@@ -95,6 +119,72 @@ const getUserBots = async (req, res, next) => {
       count: botsWithEndpoint.length,
       data: botsWithEndpoint,
       // Indicar si se están viendo todos los bots (admin) o solo los propios
+      scope: req.user.role === 'admin' ? 'all_bots' : 'user_bots'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Forzar actualización de estado de todos los bots (para detectar cambios directos en BD)
+const refreshAllBots = async (req, res, next) => {
+  try {
+    console.log(`🔄 REFRESH: Forzando actualización de estado para usuario: ${req.user.username} (${req.user.role})`);
+    
+    let bots;
+    
+    // Si es admin, obtener todos los bots del sistema
+    if (req.user.role === 'admin') {
+      console.log(`👑 REFRESH: Admin forzando actualización de TODOS los bots del sistema`);
+      bots = await Bot.find({}).populate('owner', 'name username').sort({ createdAt: -1 });
+    } else {
+      // Si es usuario normal, solo sus bots
+      console.log(`👤 REFRESH: Usuario forzando actualización de sus bots`);
+      bots = await Bot.find({ owner: req.user._id }).sort({ createdAt: -1 });
+    }
+    
+    // Agregar endpoint URL y estado en tiempo real
+    const botsWithStatus = bots.map(bot => {
+      const realTimeStatus = whatsappService.getBotStatus(bot._id);
+      
+      return {
+        ...bot.toObject(),
+        endpointUrl: bot.getEndpointUrl(),
+        realTimeStatus: realTimeStatus,
+        isReady: realTimeStatus.connected && realTimeStatus.isReady,
+        // Si es admin, incluir información del propietario
+        ...(req.user.role === 'admin' && {
+          ownerInfo: bot.owner ? {
+            id: bot.owner._id,
+            name: bot.owner.name,
+            username: bot.owner.username
+          } : null
+        })
+      };
+    });
+
+    // EMITIR EVENTOS WEBSOCKET: Forzar actualización en TODOS los clientes conectados
+    botsWithStatus.forEach(bot => {
+      const realTimeStatus = whatsappService.getBotStatus(bot._id);
+      websocketService.emitBotStatusUpdate(bot._id, {
+        database: {
+          status: bot.status,
+          phoneNumber: bot.phoneNumber,
+          lastActivity: bot.lastActivity,
+          qrCode: bot.qrCode ? true : false
+        },
+        realTime: realTimeStatus,
+        isReady: realTimeStatus.connected && realTimeStatus.isReady
+      });
+    });
+
+    console.log(`✅ REFRESH: Actualización forzada completada - ${botsWithStatus.length} bots actualizados`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Estado de bots actualizado y notificado a todos los clientes conectados',
+      count: botsWithStatus.length,
+      data: botsWithStatus,
       scope: req.user.role === 'admin' ? 'all_bots' : 'user_bots'
     });
   } catch (error) {
@@ -150,6 +240,19 @@ const getBotById = async (req, res, next) => {
         username: bot.owner.username
       };
     }
+
+    // EMITIR EVENTO WEBSOCKET: Estado actual del bot consultado
+    const realTimeStatus = whatsappService.getBotStatus(bot._id);
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: bot.status,
+        phoneNumber: bot.phoneNumber,
+        lastActivity: bot.lastActivity,
+        qrCode: bot.qrCode ? true : false
+      },
+      realTime: realTimeStatus,
+      isReady: realTimeStatus.connected && realTimeStatus.isReady
+    });
 
     res.status(200).json({
       success: true,
@@ -350,6 +453,19 @@ const restartBot = async (req, res, next) => {
     console.log(`🔄 Reiniciando bot ${bot.name} (${bot._id}) - Usuario: ${req.user.username} (${req.user.role})`);
     const result = await whatsappService.restartBot(bot._id);
 
+    // EMITIR EVENTO WEBSOCKET: Estado actualizado después del reinicio
+    const realTimeStatus = whatsappService.getBotStatus(bot._id);
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: bot.status,
+        phoneNumber: bot.phoneNumber,
+        lastActivity: bot.lastActivity,
+        qrCode: bot.qrCode ? true : false
+      },
+      realTime: realTimeStatus,
+      isReady: realTimeStatus.connected && realTimeStatus.isReady
+    });
+
     res.status(200).json({
       success: true,
       data: result
@@ -373,6 +489,19 @@ const connectBot = async (req, res, next) => {
 
     console.log(`🚀 Conectando bot ${bot.name} (${bot._id}) a WhatsApp - Usuario: ${req.user.username} (${req.user.role})`);
     const result = await whatsappService.createBotInstance(bot._id);
+
+    // EMITIR EVENTO WEBSOCKET: Estado actualizado después de iniciar conexión
+    const realTimeStatus = whatsappService.getBotStatus(bot._id);
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: bot.status,
+        phoneNumber: bot.phoneNumber,
+        lastActivity: bot.lastActivity,
+        qrCode: bot.qrCode ? true : false
+      },
+      realTime: realTimeStatus,
+      isReady: realTimeStatus.connected && realTimeStatus.isReady
+    });
 
     res.status(200).json({
       success: true,
@@ -412,6 +541,19 @@ const disconnectBot = async (req, res, next) => {
       phoneNumber: null 
     });
 
+    // EMITIR EVENTO WEBSOCKET: Estado actualizado después de desconectar
+    const realTimeStatus = whatsappService.getBotStatus(bot._id);
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: 'disconnected',
+        phoneNumber: null,
+        lastActivity: bot.lastActivity,
+        qrCode: false
+      },
+      realTime: realTimeStatus,
+      isReady: false
+    });
+
     res.status(200).json({
       success: true,
       message: 'Bot desconectado completamente - empezará de cero en próxima conexión'
@@ -446,6 +588,19 @@ const updateBot = async (req, res, next) => {
         error: 'Bot no encontrado'
       });
     }
+
+    // EMITIR EVENTO WEBSOCKET: Estado actualizado después de actualizar bot
+    const realTimeStatus = whatsappService.getBotStatus(bot._id);
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: bot.status,
+        phoneNumber: bot.phoneNumber,
+        lastActivity: bot.lastActivity,
+        qrCode: bot.qrCode ? true : false
+      },
+      realTime: realTimeStatus,
+      isReady: realTimeStatus.connected && realTimeStatus.isReady
+    });
     
     res.status(200).json({
       success: true,
@@ -483,6 +638,9 @@ const deleteBot = async (req, res, next) => {
 
     // Eliminar bot
     await Bot.findByIdAndDelete(bot._id);
+
+    // EMITIR EVENTO WEBSOCKET: Bot eliminado
+    websocketService.emitBotDeleted(bot._id);
     
     res.status(200).json({
       success: true,
@@ -607,6 +765,7 @@ const cleanupSessions = async (req, res, next) => {
 module.exports = {
   createBot,
   getUserBots,
+  refreshAllBots,
   getBotById,
   getBotQR,
   getBotQRImage,

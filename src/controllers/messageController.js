@@ -1,5 +1,8 @@
 const Bot = require('../models/Bot');
+const Message = require('../models/Message');
 const whatsappService = require('../services/whatsappService');
+const botLifecycleService = require('../services/botLifecycleService');
+const websocketService = require('../services/websocketService');
 const { validationResult } = require('express-validator');
 
 // Enviar mensaje usando API Key en header y bot ID en URL
@@ -32,28 +35,82 @@ const sendMessage = async (req, res, next) => {
     console.log(`🔍 [API] Estado del bot ${bot.name} (${bot._id}) para envío:`, status);
     console.log(`📞 [API] Enviando mensaje a ${to}: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`);
     
+    // Si no hay cliente en memoria, verificar si deberíamos conectarlo automáticamente
     if (!status.clientExists) {
       console.log(`❌ [API] Bot ${bot.name} sin cliente en memoria`);
-      return res.status(400).json({
-        success: false,
-        error: 'Bot no está conectado a WhatsApp',
-        botStatus: bot.status,
-        debug: 'No hay cliente en memoria',
-        botInfo: {
-          name: bot.name,
-          status: bot.status,
-          phoneNumber: bot.phoneNumber
+      
+      // Si el bot está marcado como conectado en BD pero no hay cliente, intentar reconectar automáticamente
+      if (bot.status === 'connected') {
+        console.log(`🔄 [API] Intentando reconexión automática del bot ${bot.name}...`);
+        try {
+          const connectResult = await whatsappService.createBotInstance(bot._id);
+          console.log(`✅ [API] Reconexión automática exitosa para ${bot.name}`);
+          
+          // Esperar un poco para que se inicialice completamente
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Verificar nuevamente el estado
+          const newStatus = whatsappService.getBotStatus(bot._id);
+          if (newStatus.clientExists && newStatus.isReady) {
+            console.log(`✅ [API] Bot ${bot.name} listo para envío después de reconexión automática`);
+          } else {
+            return res.status(400).json({
+              success: false,
+              error: 'Bot reconectado pero aún no está listo',
+              message: 'El bot se está conectando. Intenta enviar el mensaje en unos segundos.',
+              botStatus: bot.status,
+              realTimeStatus: newStatus,
+              botInfo: {
+                name: bot.name,
+                status: bot.status,
+                phoneNumber: bot.phoneNumber
+              }
+            });
+          }
+        } catch (connectError) {
+          console.error(`❌ [API] Error en reconexión automática de ${bot.name}:`, connectError.message);
+          return res.status(400).json({
+            success: false,
+            error: 'Error reconectando el bot automáticamente',
+            message: connectError.message,
+            suggestion: 'Usa POST /api/bots/{id}/connect para conectar manualmente',
+            botStatus: bot.status,
+            botInfo: {
+              name: bot.name,
+              status: bot.status,
+              phoneNumber: bot.phoneNumber
+            }
+          });
         }
-      });
+      } else {
+        // Bot no está marcado como conectado en BD
+        return res.status(400).json({
+          success: false,
+          error: 'Bot no está conectado a WhatsApp',
+          message: 'El bot debe estar conectado antes de enviar mensajes',
+          suggestion: `Usa POST /api/bots/${bot._id}/connect para conectar el bot`,
+          botStatus: bot.status,
+          debug: 'Bot no conectado en base de datos',
+          botInfo: {
+            name: bot.name,
+            status: bot.status,
+            phoneNumber: bot.phoneNumber
+          }
+        });
+      }
     }
 
-    if (!status.isReady) {
+    // Obtener el estado final (después de posible reconexión automática)
+    const finalStatus = whatsappService.getBotStatus(bot._id);
+
+    if (!finalStatus.isReady) {
       console.log(`⏳ [API] Bot ${bot.name} no está listo`);
       return res.status(400).json({
         success: false,
         error: 'Bot no está listo para enviar mensajes',
         botStatus: bot.status,
         debug: 'Cliente existe pero no está listo',
+        realTimeStatus: finalStatus,
         botInfo: {
           name: bot.name,
           status: bot.status,
@@ -117,19 +174,42 @@ const getBotStatus = async (req, res, next) => {
       });
     }
 
+    // VERIFICAR Y CORREGIR INCONSISTENCIAS AUTOMÁTICAMENTE
+    console.log(`🔍 Verificando estado del bot ${bot.name} (${bot._id})`);
+    const statusCheck = await botLifecycleService.verifyAndFixBotStatus(bot._id);
+    
+    // Recargar el bot actualizado después de la verificación
+    const updatedBot = await Bot.findById(bot._id);
+    
     const realTimeStatus = whatsappService.getBotStatus(bot._id);
     
-    console.log(`📊 [API] Consultando estado del bot ${bot.name} (${bot._id})`);
+    console.log(`📊 [API] Estado del bot ${bot.name} (${bot._id}):`, {
+      database: updatedBot.status,
+      realTime: realTimeStatus,
+      statusCheck: statusCheck
+    });
+
+    // EMITIR EVENTO WEBSOCKET: Estado del bot actualizado
+    websocketService.emitBotStatusUpdate(bot._id, {
+      database: {
+        status: updatedBot.status,
+        phoneNumber: updatedBot.phoneNumber,
+        lastActivity: updatedBot.lastActivity,
+        qrCode: updatedBot.qrCode ? true : false
+      },
+      realTime: realTimeStatus,
+      isReady: realTimeStatus.connected && realTimeStatus.isReady
+    });
 
     res.status(200).json({
       success: true,
       data: {
-        id: bot._id,
-        name: bot.name,
-        status: bot.status,
-        phoneNumber: bot.phoneNumber,
-        lastActivity: bot.lastActivity,
-        createdAt: bot.createdAt,
+        id: updatedBot._id,
+        name: updatedBot.name,
+        status: updatedBot.status,
+        phoneNumber: updatedBot.phoneNumber,
+        lastActivity: updatedBot.lastActivity,
+        createdAt: updatedBot.createdAt,
         realTimeStatus: {
           connected: realTimeStatus.connected,
           clientExists: realTimeStatus.clientExists,
@@ -143,7 +223,8 @@ const getBotStatus = async (req, res, next) => {
           receiveMessages: realTimeStatus.connected,
           sendMedia: realTimeStatus.connected && realTimeStatus.isReady,
           groupMessages: realTimeStatus.connected && realTimeStatus.isReady
-        }
+        },
+        statusCheck: statusCheck // Información sobre la verificación realizada
       }
     });
 
