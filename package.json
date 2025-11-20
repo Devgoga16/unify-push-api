@@ -6,11 +6,11 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "build": "echo 'No build step required for Node.js'",
+    "build": "npm ci --production=false",
     "test": "jest",
     "postinstall": "node patch-whatsapp.js",
     "patch": "node patch-whatsapp.js",
-    "vercel-build": "echo 'Building for Vercel deployment'"
+    "vercel-build": "npm install && node patch-whatsapp.js"
   },
   "keywords": [
     "nodejs",
