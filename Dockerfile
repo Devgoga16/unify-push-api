@@ -32,13 +32,19 @@ RUN apt-get update && apt-get install -y \
 # Crear directorio de la aplicación
 WORKDIR /usr/src/app
 
-# Copiar archivos de dependencias
+# PASO 1: Copiar solo archivos de dependencias para caching
 COPY package*.json ./
 
-# Instalar dependencias de producción
+# PASO 2: Copiar el script de postinstall necesario
+# Esto asegura que 'patch-whatsapp.js' esté disponible cuando se ejecute 'npm ci'.
+COPY patch-whatsapp.js ./
+
+# PASO 3: Instalar dependencias de producción
+# Docker solo rehace este paso si package*.json o patch-whatsapp.js cambian.
 RUN npm ci --only=production
 
-# Copiar código fuente
+# PASO 4: Copiar el resto del código fuente
+# Si solo cambia el código fuente (no las dependencias), Docker reusa el cache de los pasos anteriores.
 COPY . .
 
 # Crear directorios necesarios para WhatsApp Web.js
