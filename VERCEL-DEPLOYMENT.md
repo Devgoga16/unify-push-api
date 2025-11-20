@@ -41,6 +41,9 @@ NODE_ENV=production
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=tu_password_seguro
 
+# URL de la API (para Swagger)
+API_URL=https://tu-api.vercel.app
+
 # URL del frontend (para CORS - aunque ahora permite cualquier origen)
 FRONTEND_URL=https://tu-frontend.vercel.app
 ```

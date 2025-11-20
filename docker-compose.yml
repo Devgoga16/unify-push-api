@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Servicio de MongoDB
+  mongodb:
+    image: mongo:7
+    container_name: unify-push-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: changeme123
+      MONGO_INITDB_DATABASE: unify-push
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - unify-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Servicio de la API
+  api:
+    build: .
+    container_name: unify-push-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_URL: http://localhost:3000
+      MONGODB_URI: mongodb://admin:changeme123@mongodb:27017/unify-push?authSource=admin
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production-minimum-128-characters
+      JWT_EXPIRE: 30d
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      # Volúmenes para persistir sesiones de WhatsApp
+      - whatsapp_sessions:/usr/src/app/.wwebjs_auth
+      - whatsapp_cache:/usr/src/app/.wwebjs_cache
+    networks:
+      - unify-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  whatsapp_sessions:
+    driver: local
+  whatsapp_cache:
+    driver: local
+
+networks:
+  unify-network:
+    driver: bridge

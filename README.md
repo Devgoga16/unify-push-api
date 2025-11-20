@@ -51,6 +51,21 @@ npm start
 
 ## 🚀 Despliegue
 
+### Docker (Recomendado)
+
+La forma más fácil de desplegar la aplicación:
+
+```bash
+# Con Docker Compose (API + MongoDB)
+docker-compose up -d
+
+# Solo la API (necesitas MongoDB aparte)
+docker build -t unify-push-api .
+docker run -d -p 3000:3000 --env-file .env unify-push-api
+```
+
+Lee `DOCKER-DEPLOYMENT.md` para guía completa de Docker.
+
 ### Vercel (Limitado)
 ⚠️ **Nota**: Vercel no es ideal para esta aplicación debido a limitaciones con WebSockets y procesos persistentes.
 
